@@ -1,0 +1,1104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OSINT Investigation Board Pro (Local Files)</title>
+    <style>
+        :root {
+            --primary: #1e88e5;
+            --primary-light: #80d8ff;
+            --primary-dark: #1565c0;
+            --bg-main: #ffffff;
+            --bg-subtle: #f4f7f9;
+            --border-color: #e0e0e0;
+            --text-main: #2c3e50;
+            --text-muted: #7f8c8d;
+            --danger: #e53935;
+            
+            /* Confidence Colors */
+            --conf-confirmed: #2e7d32;
+            --conf-probable: #f57c00;
+            --conf-unverified: #d81b60;
+            --conf-disinfo: #c62828;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+        body, html { width: 100%; height: 100%; overflow: hidden; background: var(--bg-main); color: var(--text-main); }
+
+        .screen { display: none; width: 100vw; height: 100vh; }
+        .screen.active { display: flex; }
+
+        /* Welcome Screen */
+        #welcome-screen {
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #e3f2fd 0%, #ffffff 100%);
+        }
+        .welcome-card {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.08);
+            width: 480px;
+            max-width: 90%;
+            text-align: center;
+        }
+        .welcome-card h1 { color: var(--primary-dark); margin-bottom: 0.5rem; font-size: 1.8rem; }
+        .welcome-card p { color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+        
+        .btn {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+        .btn:hover { background: var(--primary-dark); }
+        .btn-secondary { background: #eceff1; color: var(--text-main); }
+        .btn-secondary:hover { background: #cfd8dc; }
+        .btn-row { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+
+        /* Workspace */
+        #workspace-screen { display: none; flex-direction: row; position: relative; width: 100vw; height: 100vh; }
+        #workspace-screen.active { display: flex; }
+
+        .top-nav {
+            position: absolute;
+            top: 15px;
+            left: 15px;
+            z-index: 10;
+            display: flex;
+            gap: 8px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 8px 12px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            border: 1px solid var(--border-color);
+            align-items: center;
+        }
+
+        .file-status-indicator {
+            font-size: 0.8rem;
+            font-weight: bold;
+            color: #2e7d32;
+            padding: 2px 8px;
+            background: #e8f5e9;
+            border-radius: 4px;
+            max-width: 150px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .zoom-controls {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+            background: #f0f4f8;
+            padding: 2px 6px;
+            border-radius: 6px;
+            border: 1px solid var(--border-color);
+        }
+
+        /* Pannable & Zoomable Infinite Canvas Container */
+        .main-board-container {
+            flex: 1;
+            height: 100%;
+            position: relative;
+            overflow: hidden;
+            background: #ffffff;
+            cursor: grab;
+        }
+        .main-board-container:active { cursor: grabbing; }
+
+        #viewport-layer {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform-origin: 0 0;
+        }
+
+        #board-svg {
+            position: absolute;
+            top: -10000px;
+            left: -10000px;
+            width: 20000px;
+            height: 20000px;
+            z-index: 1;
+            pointer-events: none;
+            overflow: visible;
+        }
+        #board-svg line, #board-svg path, #board-svg text, #board-svg g { pointer-events: auto; }
+
+        /* Connection Styling */
+        .conn-line {
+            stroke: #1e88e5;
+            stroke-width: 3;
+            cursor: pointer;
+            transition: stroke 0.2s, stroke-width 0.2s;
+        }
+        .conn-line:hover {
+            stroke: var(--danger);
+            stroke-width: 5;
+        }
+
+        /* INO Nodes */
+        .ino-node {
+            position: absolute;
+            width: 140px;
+            height: 150px;
+            background: white;
+            border: 2px solid var(--primary);
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08);
+            z-index: 2;
+            cursor: move;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: space-between;
+            padding: 6px;
+            user-select: none;
+        }
+        .ino-node.selected { border-color: #ff9800; box-shadow: 0 0 0 3px rgba(255,152,0,0.3); }
+        .ino-node img { width: 60px; height: 60px; object-fit: cover; border-radius: 4px; pointer-events: none; }
+        .ino-node .icon-placeholder { width: 60px; height: 60px; display: flex; align-items: center; justify-content: center; font-size: 28px; background: #e3f2fd; border-radius: 4px; }
+        .ino-node .ino-title { font-size: 0.8rem; font-weight: bold; margin-top: 4px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; width: 100%; }
+        .ino-node .ino-date { font-size: 0.65rem; color: var(--text-muted); }
+
+        /* Confidence Badge Tag */
+        .badge {
+            font-size: 0.6rem;
+            font-weight: bold;
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            text-transform: uppercase;
+        }
+        .badge-confirmed { background: var(--conf-confirmed); }
+        .badge-probable { background: var(--conf-probable); }
+        .badge-unverified { background: var(--conf-unverified); }
+        .badge-disinformation { background: var(--conf-disinfo); }
+
+        /* Timeline Overlay View */
+        #timeline-view {
+            display: none;
+            width: 100%;
+            height: 100%;
+            position: absolute;
+            top: 0;
+            left: 0;
+            z-index: 3;
+            background: white;
+            overflow-x: auto;
+            overflow-y: auto;
+            padding: 80px 40px 40px 40px;
+        }
+        .timeline-axis { position: relative; min-height: 100%; display: flex; align-items: center; min-width: max-content; padding-right: 100px; }
+        .timeline-line { position: absolute; height: 4px; background: var(--primary); top: 50%; left: 0; right: 0; z-index: 1; }
+        .timeline-item { position: relative; z-index: 2; margin: 0 30px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+        .timeline-card { background: white; border: 2px solid var(--primary); border-radius: 8px; padding: 10px; width: 140px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); text-align: center; }
+
+        /* Sidebar Right */
+        .sidebar-right {
+            width: 330px;
+            height: 100%;
+            background: var(--bg-subtle);
+            border-left: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            z-index: 5;
+        }
+        .sidebar-header { padding: 15px; border-bottom: 1px solid var(--border-color); background: white; }
+        .sidebar-header h3 { font-size: 1rem; color: var(--primary-dark); margin-bottom: 10px; }
+        .search-input, .filter-select {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            margin-bottom: 8px;
+            font-size: 0.85rem;
+        }
+        .sidebar-content { flex: 1; overflow-y: auto; padding: 15px; }
+        .table-list { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .table-list th, .table-list td { text-align: left; padding: 8px; border-bottom: 1px solid var(--border-color); word-break: break-word; }
+        .table-list tr:hover { background: #e3f2fd; cursor: pointer; }
+
+        /* Floating Add Button */
+        .fab-add {
+            position: absolute;
+            bottom: 25px;
+            right: 355px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background-color: var(--primary-light);
+            color: white;
+            font-size: 32px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
+            cursor: pointer;
+            z-index: 10;
+            border: 2px solid white;
+            transition: transform 0.2s, background-color 0.2s;
+        }
+        .fab-add:hover { transform: scale(1.08); background-color: var(--primary); }
+
+        /* Context Menu */
+        .context-menu {
+            display: none;
+            position: absolute;
+            z-index: 1000;
+            background: white;
+            border: 1px solid var(--border-color);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            border-radius: 6px;
+            padding: 5px 0;
+            min-width: 150px;
+        }
+        .context-menu div { padding: 8px 15px; font-size: 0.85rem; cursor: pointer; }
+        .context-menu div:hover { background: #e3f2fd; color: var(--primary-dark); }
+
+        /* Modal */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.4);
+            z-index: 2000;
+            align-items: center;
+            justify-content: center;
+        }
+        .modal-overlay.active { display: flex; }
+        .modal {
+            background: white;
+            border-radius: 8px;
+            width: 480px;
+            max-width: 90%;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            max-height: 90vh;
+            overflow-y: auto;
+        }
+        .modal h2 { margin-bottom: 15px; font-size: 1.2rem; color: var(--primary-dark); }
+        .form-group { margin-bottom: 12px; }
+        .form-group label { display: block; font-size: 0.8rem; font-weight: bold; margin-bottom: 4px; }
+        .form-group input, .form-group textarea, .form-group select {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            font-size: 0.85rem;
+        }
+        .hash-display {
+            font-family: monospace;
+            font-size: 0.7rem;
+            background: #eceff1;
+            padding: 6px;
+            border-radius: 4px;
+            word-break: break-all;
+            color: #37474f;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="welcome-screen" class="screen active">
+        <div class="welcome-card">
+            <h1>OSINT Board Pro</h1>
+            <p>Direct File System Storage Architecture (No Browser-only Cache).</p>
+            <div class="btn-row" style="flex-direction: column;">
+                <button class="btn" onclick="createNewCaseFile()">+ Create New Local Case File</button>
+                <button class="btn btn-secondary" onclick="openExistingCaseFile()">📂 Open Case File from Disk</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="workspace-screen" class="screen">
+        <div class="top-nav">
+            <span id="file-indicator" class="file-status-indicator">Unsaved Case</span>
+            <button class="btn" id="toggle-view-btn" onclick="toggleView()">View: Image Board</button>
+            <div class="zoom-controls">
+                <button class="btn btn-secondary" onclick="zoomCanvas(-0.1)" title="Zoom Out">-</button>
+                <span id="zoom-level-text" style="font-size: 0.8rem; font-weight: bold; width: 45px; text-align: center;">100%</span>
+                <button class="btn btn-secondary" onclick="zoomCanvas(0.1)" title="Zoom In">+</button>
+                <button class="btn btn-secondary" onclick="resetZoom()" title="Reset Zoom">Reset</button>
+            </div>
+            <button class="btn btn-secondary" onclick="autoLayoutNodes()">Auto-Layout</button>
+            <button class="btn btn-secondary" onclick="exportAsPNG()">Export PNG</button>
+            <button class="btn" onclick="saveDirectToFile()">💾 Save to Disk</button>
+            <button class="btn btn-secondary" onclick="closeWorkspace()">Exit Case</button>
+        </div>
+
+        <div class="main-board-container" id="board-container">
+            <div id="viewport-layer">
+                <svg id="board-svg"></svg>
+                <div id="nodes-container"></div>
+            </div>
+            
+            <div id="timeline-view">
+                <div class="timeline-axis" id="timeline-axis">
+                    <div class="timeline-line"></div>
+                </div>
+            </div>
+        </div>
+
+        <div class="fab-add" onclick="addNewINO()" title="Add Investigative Object">+</div>
+
+        <div class="sidebar-right">
+            <div class="sidebar-header">
+                <h3>Investigation Analysis</h3>
+                <input type="text" id="search-bar" class="search-input" placeholder="Search plain text..." oninput="applyFilters()">
+                <div style="display: flex; gap: 5px;">
+                    <select id="icon-filter" class="filter-select" onchange="applyFilters()">
+                        <option value="">All Types/Icons</option>
+                        <option value="👤">Person</option>
+                        <option value="🏠">Address/House</option>
+                        <option value="📞">Phone</option>
+                        <option value="🚗">Vehicle</option>
+                        <option value="📄">Document</option>
+                        <option value="🖥️">Server</option>
+                        <option value="🌐">Domain/Web</option>
+                    </select>
+                    <select id="conf-filter" class="filter-select" onchange="applyFilters()">
+                        <option value="">All Confidence Levels</option>
+                        <option value="confirmed">Confirmed</option>
+                        <option value="probable">Probable</option>
+                        <option value="unverified">Unverified</option>
+                        <option value="disinformation">Disinformation</option>
+                    </select>
+                </div>
+            </div>
+            <div class="sidebar-content">
+                <h4 style="font-size: 0.85rem; margin-bottom: 8px;">Connections Registry</h4>
+                <table class="table-list" id="connections-table">
+                    <thead>
+                        <tr>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Note</th>
+                            <th>Action</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div id="context-menu" class="context-menu">
+        <div onclick="openEditModal()">Edit Object</div>
+        <div onclick="startConnecting()">Create Connection</div>
+        <div onclick="deleteINO()" style="color: var(--danger);">Delete Object</div>
+    </div>
+
+    <div id="edit-modal" class="modal-overlay">
+        <div class="modal">
+            <h2>Edit Investigative Object (INO)</h2>
+            <div class="form-group">
+                <label>Title</label>
+                <input type="text" id="ino-title-input">
+            </div>
+            <div class="form-group">
+                <label>Confidence Rating</label>
+                <select id="ino-confidence-input">
+                    <option value="confirmed">Confirmed (Green)</option>
+                    <option value="probable">Probable (Orange)</option>
+                    <option value="unverified" selected>Unverified (Pink)</option>
+                    <option value="disinformation">Disinformation (Red)</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Icon Type (Fallback)</label>
+                <select id="ino-icon-input">
+                    <option value="👤">Person</option>
+                    <option value="🏠">Address/House</option>
+                    <option value="📞">Phone</option>
+                    <option value="🚗">Vehicle</option>
+                    <option value="📄">Document</option>
+                    <option value="🖥️">Server</option>
+                    <option value="🌐">Domain/Web</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>Image Upload Override</label>
+                <input type="file" id="ino-image-input" accept="image/*">
+            </div>
+            <div class="form-group">
+                <label>Chain of Custody SHA-256 Hash</label>
+                <div id="ino-hash-display" class="hash-display">No Image Attached</div>
+            </div>
+            <div class="form-group" style="display: flex; gap: 10px;">
+                <div style="flex: 1;">
+                    <label>Start Date</label>
+                    <input type="date" id="ino-date-start">
+                </div>
+                <div style="flex: 1;">
+                    <label>End Date (Optional)</label>
+                    <input type="date" id="ino-date-end">
+                </div>
+            </div>
+            <div class="form-group">
+                <label>Description / Notes</label>
+                <textarea id="ino-desc-input" rows="3"></textarea>
+            </div>
+            <div class="btn-row" style="justify-content: flex-end;">
+                <button class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                <button class="btn" onclick="saveINODetails()">Save</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Core State
+        let fileHandle = null; // Native FileSystemFileHandle
+        let currentData = { id: null, title: '', inos: [], connections: [] };
+        
+        let selectedINOId = null;
+        let activeView = 'board';
+        let connectingSourceId = null;
+        let tempLine = null;
+
+        // Viewport Pan & Zoom state
+        let panX = 0, panY = 0;
+        let zoom = 1.0;
+        let isPanning = false, panStartX = 0, panStartY = 0;
+
+        // SVG Canvas Offset
+        const SVG_OFFSET_X = 10000;
+        const SVG_OFFSET_Y = 10000;
+
+        // Element References
+        const welcomeScreen = document.getElementById('welcome-screen');
+        const workspaceScreen = document.getElementById('workspace-screen');
+        const boardContainer = document.getElementById('board-container');
+        const viewportLayer = document.getElementById('viewport-layer');
+        const nodesContainer = document.getElementById('nodes-container');
+        const svgCanvas = document.getElementById('board-svg');
+        const contextMenu = document.getElementById('context-menu');
+        const editModal = document.getElementById('edit-modal');
+        const zoomText = document.getElementById('zoom-level-text');
+        const fileIndicator = document.getElementById('file-indicator');
+
+        function init() {
+            setupCanvasControls();
+            setupEventListeners();
+        }
+
+        // File System API Interactions
+    async function createNewCaseFile() {
+    try {
+        const defaultName = `Case_${Math.floor(1000 + Math.random() * 9000)}_OSINT.json`;
+
+        if ('showSaveFilePicker' in window) {
+            // Trigger file picker IMMEDIATELY on click to preserve user gesture
+            fileHandle = await window.showSaveFilePicker({
+                suggestedName: defaultName,
+                types: [{
+                    description: 'JSON Case File',
+                    accept: { 'application/json': ['.json'] }
+                }]
+            });
+
+            // Extract the case title from the file name chosen by the user
+            const fileName = fileHandle.name.replace(/\.json$/i, '');
+            currentData = { id: 'inv_' + Date.now(), title: fileName, inos: [], connections: [] };
+        } else {
+            // Fallback for browsers without File System Access API
+            const title = prompt("Enter Case Title:", defaultName.replace('.json', ''));
+            if (!title) return;
+            currentData = { id: 'inv_' + Date.now(), title, inos: [], connections: [] };
+            fileHandle = null;
+        }
+
+        await saveDirectToFile();
+        openWorkspace();
+    } catch (err) {
+        if (err.name !== 'AbortError') {
+            alert("Error creating case file: " + err.message);
+        }
+    }
+}
+
+        async function openExistingCaseFile() {
+            try {
+                if ('showOpenFilePicker' in window) {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{ description: 'JSON Case File', accept: { 'application/json': ['.json'] } }],
+                        multiple: false
+                    });
+                    fileHandle = handle;
+                    const file = await fileHandle.getFile();
+                    const text = await file.text();
+                    currentData = JSON.parse(text);
+                } else {
+                    // Fallback input click
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.json';
+                    await new Promise(resolve => {
+                        input.onchange = async (e) => {
+                            const file = e.target.files[0];
+                            const text = await file.text();
+                            currentData = JSON.parse(text);
+                            fileHandle = null;
+                            resolve();
+                        };
+                        input.click();
+                    });
+                }
+                openWorkspace();
+            } catch (err) {
+                if (err.name !== 'AbortError') alert("Error opening file: " + err.message);
+            }
+        }
+
+        async function saveDirectToFile() {
+            if (fileHandle) {
+                try {
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(JSON.stringify(currentData, null, 2));
+                    await writable.close();
+                    fileIndicator.textContent = fileHandle.name;
+                } catch (err) {
+                    alert("Failed saving directly to local file: " + err.message);
+                }
+            } else {
+                // Browser Fallback Download
+                const blob = new Blob([JSON.stringify(currentData, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${currentData.title.replace(/\s+/g, '_')}_OSINT.json`;
+                a.click();
+                fileIndicator.textContent = "Downloaded File";
+            }
+        }
+
+        function openWorkspace() {
+            welcomeScreen.classList.remove('active');
+            workspaceScreen.classList.add('active');
+            panX = 0; panY = 0; zoom = 1.0;
+            fileIndicator.textContent = fileHandle ? fileHandle.name : currentData.title;
+            updateViewportTransform();
+            renderBoard();
+        }
+
+        function closeWorkspace() {
+            if (confirm("Make sure you saved your changes! Return to welcome screen?")) {
+                workspaceScreen.classList.remove('active');
+                welcomeScreen.classList.add('active');
+                fileHandle = null;
+                currentData = { id: null, title: '', inos: [], connections: [] };
+            }
+        }
+
+        // Canvas Mechanics
+        function setupCanvasControls() {
+            boardContainer.addEventListener('mousedown', (e) => {
+                if (e.target === boardContainer || e.target === svgCanvas || e.target === viewportLayer) {
+                    isPanning = true;
+                    panStartX = e.clientX - panX;
+                    panStartY = e.clientY - panY;
+                }
+            });
+
+            window.addEventListener('mousemove', (e) => {
+                if (isPanning) {
+                    panX = e.clientX - panStartX;
+                    panY = e.clientY - panStartY;
+                    updateViewportTransform();
+                }
+            });
+
+            window.addEventListener('mouseup', () => { isPanning = false; });
+
+            boardContainer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = e.deltaY < 0 ? 1.08 : 0.92;
+                const rect = boardContainer.getBoundingClientRect();
+                const mouseX = e.clientX - rect.left;
+                const mouseY = e.clientY - rect.top;
+
+                const newZoom = Math.min(Math.max(0.2, zoom * zoomFactor), 3.0);
+                panX = mouseX - (mouseX - panX) * (newZoom / zoom);
+                panY = mouseY - (mouseY - panY) * (newZoom / zoom);
+                zoom = newZoom;
+
+                updateViewportTransform();
+            }, { passive: false });
+        }
+
+        function zoomCanvas(delta) {
+            const newZoom = Math.min(Math.max(0.2, zoom + delta), 3.0);
+            const centerPointX = boardContainer.clientWidth / 2;
+            const centerPointY = boardContainer.clientHeight / 2;
+
+            panX = centerPointX - (centerPointX - panX) * (newZoom / zoom);
+            panY = centerPointY - (centerPointY - panY) * (newZoom / zoom);
+            zoom = newZoom;
+            updateViewportTransform();
+        }
+
+        function resetZoom() {
+            zoom = 1.0; panX = 0; panY = 0;
+            updateViewportTransform();
+        }
+
+        function updateViewportTransform() {
+            viewportLayer.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+            zoomText.textContent = `${Math.round(zoom * 100)}%`;
+        }
+
+        // Node Visuals
+        function addNewINO() {
+            const newINO = {
+                id: 'ino_' + Date.now(),
+                title: 'New Subject',
+                icon: '👤',
+                image: '',
+                imageHash: '',
+                confidence: 'unverified',
+                startDate: new Date().toISOString().split('T')[0],
+                endDate: '',
+                description: '',
+                x: (200 - panX) / zoom,
+                y: (200 - panY) / zoom
+            };
+            currentData.inos.push(newINO);
+            renderBoard();
+        }
+
+        function renderBoard() {
+            nodesContainer.innerHTML = '';
+            
+            currentData.inos.forEach(ino => {
+                const node = document.createElement('div');
+                node.className = `ino-node ${ino.id === selectedINOId ? 'selected' : ''}`;
+                node.style.left = `${ino.x}px`;
+                node.style.top = `${ino.y}px`;
+                node.dataset.id = ino.id;
+
+                const imgHtml = ino.image 
+                    ? `<img src="${ino.image}" alt="INO Image">`
+                    : `<div class="icon-placeholder">${ino.icon || '👤'}</div>`;
+
+                const conf = ino.confidence || 'unverified';
+
+                node.innerHTML = `
+                    ${imgHtml}
+                    <div class="ino-title">${ino.title}</div>
+                    <span class="badge badge-${conf}">${conf}</span>
+                    <div class="ino-date">${ino.startDate || 'No Date'}</div>
+                `;
+
+                makeDraggable(node, ino);
+
+                node.oncontextmenu = (e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    selectedINOId = ino.id;
+                    showContextMenu(e.clientX, e.clientY);
+                };
+
+                nodesContainer.appendChild(node);
+            });
+
+            renderConnections();
+            renderSidebar();
+            if (activeView === 'timeline') renderTimeline();
+        }
+
+        function renderConnections() {
+            svgCanvas.innerHTML = '';
+
+            currentData.connections.forEach((conn, index) => {
+                const src = currentData.inos.find(i => i.id === conn.from);
+                const target = currentData.inos.find(i => i.id === conn.to);
+                if (!src || !target) return;
+
+                const x1 = src.x + 70 + SVG_OFFSET_X;
+                const y1 = src.y + 75 + SVG_OFFSET_Y;
+                const x2 = target.x + 70 + SVG_OFFSET_X;
+                const y2 = target.y + 75 + SVG_OFFSET_Y;
+
+                const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', x1);
+                line.setAttribute('y1', y1);
+                line.setAttribute('x2', x2);
+                line.setAttribute('y2', y2);
+                line.setAttribute('class', 'conn-line');
+                
+                const handleConnClick = () => {
+                    const action = prompt(`Connection Menu:\n- Type 'delete' to remove connection\n- Or enter a new note to update label:`, conn.note || "");
+                    if (action !== null) {
+                        if (action.trim().toLowerCase() === 'delete') {
+                            deleteConnection(index);
+                        } else {
+                            conn.note = action;
+                            renderBoard();
+                        }
+                    }
+                };
+
+                line.onclick = handleConnClick;
+                g.appendChild(line);
+
+                if (conn.note) {
+                    const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
+                    text.setAttribute('x', (x1 + x2) / 2);
+                    text.setAttribute('y', (y1 + y2) / 2 - 5);
+                    text.setAttribute('fill', '#1565c0');
+                    text.setAttribute('font-size', '12');
+                    text.setAttribute('font-weight', 'bold');
+                    text.setAttribute('text-anchor', 'middle');
+                    text.style.cursor = 'pointer';
+                    text.textContent = conn.note;
+                    text.onclick = handleConnClick;
+                    g.appendChild(text);
+                }
+
+                svgCanvas.appendChild(g);
+            });
+        }
+
+        function deleteConnection(index) {
+            currentData.connections.splice(index, 1);
+            renderBoard();
+        }
+
+        function makeDraggable(element, ino) {
+            let initialX = 0, initialY = 0;
+            element.onmousedown = dragMouseDown;
+
+            function dragMouseDown(e) {
+                if (e.button !== 0) return;
+                e.preventDefault();
+                e.stopPropagation();
+                initialX = e.clientX;
+                initialY = e.clientY;
+                document.onmousemove = elementDrag;
+                document.onmouseup = closeDragElement;
+            }
+
+            function elementDrag(e) {
+                e.preventDefault();
+                const dx = (e.clientX - initialX) / zoom;
+                const dy = (e.clientY - initialY) / zoom;
+                initialX = e.clientX;
+                initialY = e.clientY;
+
+                ino.x += dx;
+                ino.y += dy;
+                element.style.left = ino.x + "px";
+                element.style.top = ino.y + "px";
+
+                renderConnections();
+            }
+
+            function closeDragElement() {
+                document.onmousemove = null;
+                document.onmouseup = null;
+            }
+        }
+
+        function showContextMenu(x, y) {
+            contextMenu.style.left = x + 'px';
+            contextMenu.style.top = y + 'px';
+            contextMenu.style.display = 'block';
+        }
+
+        function hideContextMenu() {
+            contextMenu.style.display = 'none';
+        }
+
+        function startConnecting() {
+            connectingSourceId = selectedINOId;
+            hideContextMenu();
+
+            tempLine = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+            tempLine.setAttribute('stroke', '#80d8ff');
+            tempLine.setAttribute('stroke-width', '2');
+            tempLine.setAttribute('stroke-dasharray', '4');
+            svgCanvas.appendChild(tempLine);
+
+            const sourceINO = currentData.inos.find(i => i.id === connectingSourceId);
+
+            const mouseMoveHandler = (e) => {
+                const rect = boardContainer.getBoundingClientRect();
+                tempLine.setAttribute('x1', sourceINO.x + 70 + SVG_OFFSET_X);
+                tempLine.setAttribute('y1', sourceINO.y + 75 + SVG_OFFSET_Y);
+                tempLine.setAttribute('x2', (e.clientX - rect.left - panX) / zoom + SVG_OFFSET_X);
+                tempLine.setAttribute('y2', (e.clientY - rect.top - panY) / zoom + SVG_OFFSET_Y);
+            };
+
+            const clickHandler = (e) => {
+                const targetNode = e.target.closest('.ino-node');
+                if (targetNode) {
+                    const targetId = targetNode.dataset.id;
+                    if (targetId !== connectingSourceId) {
+                        const note = prompt("Enter connection note (optional):", "");
+                        currentData.connections.push({
+                            from: connectingSourceId,
+                            to: targetId,
+                            note: note || ""
+                        });
+                    }
+                }
+                cleanup();
+            };
+
+            function cleanup() {
+                if (tempLine) tempLine.remove();
+                document.removeEventListener('mousemove', mouseMoveHandler);
+                document.removeEventListener('click', clickHandler);
+                renderBoard();
+            }
+
+            setTimeout(() => {
+                document.addEventListener('mousemove', mouseMoveHandler);
+                document.addEventListener('click', clickHandler, { once: true });
+            }, 50);
+        }
+
+        function openEditModal() {
+            hideContextMenu();
+            const ino = currentData.inos.find(i => i.id === selectedINOId);
+            if (!ino) return;
+
+            document.getElementById('ino-title-input').value = ino.title || '';
+            document.getElementById('ino-confidence-input').value = ino.confidence || 'unverified';
+            document.getElementById('ino-icon-input').value = ino.icon || '👤';
+            document.getElementById('ino-date-start').value = ino.startDate || '';
+            document.getElementById('ino-date-end').value = ino.endDate || '';
+            document.getElementById('ino-desc-input').value = ino.description || '';
+            document.getElementById('ino-hash-display').textContent = ino.imageHash || 'No Image Attached';
+            
+            editModal.classList.add('active');
+        }
+
+        function closeEditModal() {
+            editModal.classList.remove('active');
+        }
+
+        async function saveINODetails() {
+            const ino = currentData.inos.find(i => i.id === selectedINOId);
+            if (!ino) return;
+
+            ino.title = document.getElementById('ino-title-input').value;
+            ino.confidence = document.getElementById('ino-confidence-input').value;
+            ino.icon = document.getElementById('ino-icon-input').value;
+            ino.startDate = document.getElementById('ino-date-start').value;
+            ino.endDate = document.getElementById('ino-date-end').value;
+            ino.description = document.getElementById('ino-desc-input').value;
+
+            const fileInput = document.getElementById('ino-image-input');
+            if (fileInput.files && fileInput.files[0]) {
+                const file = fileInput.files[0];
+                const arrayBuffer = await file.arrayBuffer();
+                const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+                const hashArray = Array.from(new Uint8Array(hashBuffer));
+                ino.imageHash = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    ino.image = e.target.result;
+                    closeEditModal();
+                    renderBoard();
+                };
+                reader.readAsDataURL(file);
+            } else {
+                closeEditModal();
+                renderBoard();
+            }
+        }
+
+        function deleteINO() {
+            hideContextMenu();
+            if (!selectedINOId) return;
+            currentData.inos = currentData.inos.filter(i => i.id !== selectedINOId);
+            currentData.connections = currentData.connections.filter(c => c.from !== selectedINOId && c.to !== selectedINOId);
+            selectedINOId = null;
+            renderBoard();
+        }
+
+        function autoLayoutNodes() {
+            if (currentData.inos.length === 0) return;
+            const center = { x: (400 - panX) / zoom, y: (300 - panY) / zoom };
+            const radius = Math.min(300, 100 + currentData.inos.length * 30);
+            const step = (2 * Math.PI) / currentData.inos.length;
+
+            currentData.inos.forEach((ino, i) => {
+                ino.x = center.x + radius * Math.cos(i * step);
+                ino.y = center.y + radius * Math.sin(i * step);
+            });
+            renderBoard();
+        }
+
+        function exportAsPNG() {
+            const width = boardContainer.clientWidth;
+            const height = boardContainer.clientHeight;
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+
+            ctx.fillStyle = "#ffffff";
+            ctx.fillRect(0, 0, width, height);
+
+            currentData.connections.forEach(conn => {
+                const src = currentData.inos.find(i => i.id === conn.from);
+                const target = currentData.inos.find(i => i.id === conn.to);
+                if (!src || !target) return;
+
+                ctx.beginPath();
+                ctx.moveTo((src.x * zoom) + 70 + panX, (src.y * zoom) + 75 + panY);
+                ctx.lineTo((target.x * zoom) + 70 + panX, (target.y * zoom) + 75 + panY);
+                ctx.strokeStyle = '#1e88e5';
+                ctx.lineWidth = 3;
+                ctx.stroke();
+            });
+
+            currentData.inos.forEach(ino => {
+                const x = (ino.x * zoom) + panX;
+                const y = (ino.y * zoom) + panY;
+
+                ctx.fillStyle = '#ffffff';
+                ctx.strokeStyle = '#1e88e5';
+                ctx.lineWidth = 2;
+                ctx.fillRect(x, y, 140 * zoom, 150 * zoom);
+                ctx.strokeRect(x, y, 140 * zoom, 150 * zoom);
+
+                ctx.fillStyle = '#2c3e50';
+                ctx.font = `bold ${Math.max(8, 12 * zoom)}px sans-serif`;
+                ctx.textAlign = 'center';
+                ctx.fillText(ino.title, x + (70 * zoom), y + (105 * zoom));
+
+                ctx.font = `${Math.max(6, 10 * zoom)}px sans-serif`;
+                ctx.fillStyle = '#7f8c8d';
+                ctx.fillText(ino.confidence.toUpperCase(), x + (70 * zoom), y + (125 * zoom));
+            });
+
+            const a = document.createElement('a');
+            a.download = `${currentData.title}_OSINT_Report.png`;
+            a.href = canvas.toDataURL('image/png');
+            a.click();
+        }
+
+        function toggleView() {
+            activeView = activeView === 'board' ? 'timeline' : 'board';
+            const btn = document.getElementById('toggle-view-btn');
+            const timelineView = document.getElementById('timeline-view');
+
+            if (activeView === 'timeline') {
+                btn.textContent = 'View: Timeline';
+                timelineView.style.display = 'block';
+                renderTimeline();
+            } else {
+                btn.textContent = 'View: Image Board';
+                timelineView.style.display = 'none';
+                renderBoard();
+            }
+        }
+
+        function renderTimeline() {
+            const axis = document.getElementById('timeline-axis');
+            axis.innerHTML = '<div class="timeline-line"></div>';
+
+            const groups = {};
+            currentData.inos.forEach(ino => {
+                const d = ino.startDate || 'No Date';
+                if (!groups[d]) groups[d] = [];
+                groups[d].push(ino);
+            });
+
+            const sortedDates = Object.keys(groups).sort((a, b) => {
+                if (a === 'No Date') return 1;
+                if (b === 'No Date') return -1;
+                return new Date(a) - new Date(b);
+            });
+
+            sortedDates.forEach(date => {
+                const itemColumn = document.createElement('div');
+                itemColumn.className = 'timeline-item';
+
+                groups[date].forEach(ino => {
+                    const card = document.createElement('div');
+                    card.className = 'timeline-card';
+                    const spanLabel = ino.endDate ? `<small style="color:var(--primary); font-weight:bold;">→ ${ino.endDate}</small>` : '';
+
+                    card.innerHTML = `
+                        <div>${ino.icon || '👤'}</div>
+                        <strong>${ino.title}</strong>
+                        <div style="font-size: 0.7rem; color: var(--text-muted);">${ino.startDate || 'No Date'}</div>
+                        ${spanLabel}
+                    `;
+                    itemColumn.appendChild(card);
+                });
+
+                axis.appendChild(itemColumn);
+            });
+        }
+
+        function renderSidebar() {
+            const tbody = document.querySelector('#connections-table tbody');
+            tbody.innerHTML = '';
+
+            currentData.connections.forEach((conn, index) => {
+                const fromINO = currentData.inos.find(i => i.id === conn.from);
+                const toINO = currentData.inos.find(i => i.id === conn.to);
+                
+                const tr = document.createElement('tr');
+                tr.innerHTML = `
+                    <td>${fromINO ? fromINO.title : '?'}</td>
+                    <td>${toINO ? toINO.title : '?'}</td>
+                    <td>${conn.note || '-'}</td>
+                    <td><button class="btn btn-secondary" style="padding:2px 6px; font-size:0.7rem; color:var(--danger);" onclick="deleteConnection(${index})">X</button></td>
+                `;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function applyFilters() {
+            const query = document.getElementById('search-bar').value.toLowerCase();
+            const iconFilter = document.getElementById('icon-filter').value;
+            const confFilter = document.getElementById('conf-filter').value;
+
+            document.querySelectorAll('.ino-node').forEach(node => {
+                const ino = currentData.inos.find(i => i.id === node.dataset.id);
+                if (!ino) return;
+
+                const matchesText = ino.title.toLowerCase().includes(query) || (ino.description && ino.description.toLowerCase().includes(query));
+                const matchesIcon = !iconFilter || ino.icon === iconFilter;
+                const matchesConf = !confFilter || ino.confidence === confFilter;
+
+                if (matchesText && matchesIcon && matchesConf) {
+                    node.style.display = 'flex';
+                } else {
+                    node.style.display = 'none';
+                }
+            });
+        }
+
+        function setupEventListeners() {
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#context-menu')) hideContextMenu();
+            });
+        }
+
+        init();
+    </script>
+</body>
+</html>
